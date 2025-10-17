@@ -11,7 +11,7 @@ import random
 script.py - Automatically sort files by type.
 
 Usage:
-    python script.py [--path PATH] [--dest DEST] [--recursive] [--dry-run] [--copy] [--extract] [--pretest]
+    python script.py [--path PATH] [--dest DEST] [--recursive] [--dry-run] [--copy] [--extract] [--pretest] [--remove-empty] [--trash]
 
 Options:
     --path PATH      Source directory (default: current directory)
@@ -21,6 +21,8 @@ Options:
     --copy           Copy instead of move
     --extract        Extract archives (zip/tar/...) into their destination folder
     --pretest        Create a bunch of unsorted files in --path and exit
+    --remove-empty   Remove empty subdirectories after sorting (respect --dry-run)
+    --trash          If provided, delete directories permanently. Otherwise move empty dirs to a .trashcan folder
 """
 
 
@@ -175,6 +177,93 @@ def handle_archive(src: Path, extract: bool, target_folder: Path, dry_run: bool)
         return False
 
 
+def prune_empty_dirs(src: Path, output_dirs: set, dry_run: bool, trash_permanent: bool, trash_dir: Path):
+    """Remove or move empty directories under src.
+
+    Args:
+        src (Path): The `src` parameter is a `Path` object that represents the source directory from which empty directories will be pruned.
+        output_dirs (set): A set of directories that should be skipped when pruning empty directories. These directories are typically the output directories where sorted files are stored.
+        
+        dry_run (bool): The `dry_run` parameter is a boolean flag that indicates whether the function should perform a dry run or not. If `dry_run` is set to `True`, the function will only log the actions it would take without actually performing any file operations.
+        
+        trash_permanent (bool): The `trash_permanent` parameter is a boolean flag that determines whether empty directories should be permanently deleted or moved to a trash directory. If `trash_permanent` is set to `True`, the empty directories will be permanently removed using `os.rmdir()`. If it is set to `False`, the empty directories will be moved to the specified `trash_dir`.
+        
+        trash_dir (Path): The `trash_dir` parameter is a `Path` object that represents the directory where empty directories will be moved if they are not being permanently deleted. This directory is used when the `trash_permanent` parameter is set to `False`. The function will create this directory if it does not already exist.
+    """
+    src = src.resolve()
+    trash_dir = trash_dir.resolve()
+
+    # Walk bottom-up to remove deepest empty dirs first
+    for root, dirs, files in os.walk(src, topdown=False):
+        p = Path(root).resolve()
+
+        # Skip the source root itself
+        if p == src:
+            continue
+
+        # Skip output directories and their parents
+        skip = False
+        try:
+            for out in output_dirs:
+                # If this folder is the output folder or inside it, skip
+                if p == out or out in p.parents or p == out:
+                    skip = True
+                    break
+            if trash_dir in p.parents or p == trash_dir:
+                skip = True
+        except Exception:
+            # permission issues - skip
+            skip = True
+
+        if skip:
+            continue
+
+        # Ignore symlinks
+        try:
+            if p.is_symlink():
+                continue
+        except Exception:
+            continue
+
+        # If directory is empty (no files and no dirs), remove or move it
+        try:
+            is_empty = True
+            for _ in p.iterdir():
+                is_empty = False
+                break
+        except Exception:
+            # Can't read dir; skip
+            continue
+
+        if not is_empty:
+            continue
+
+        # Prepare action
+        if dry_run:
+            if trash_permanent:
+                logging.info(f"[DRY] REMOVE EMPTY DIR: {p}")
+            else:
+                logging.info(f"[DRY] MOVE EMPTY DIR TO TRASH: {p} -> {trash_dir}")
+            continue
+
+        # Perform action
+        if trash_permanent:
+            try:
+                os.rmdir(str(p))
+                logging.info(f"REMOVED EMPTY DIR: {p}")
+            except Exception as e:
+                logging.error(f"Error removing dir {p}: {e}")
+        else:
+            try:
+                # ensure trash_dir exists
+                trash_dir.mkdir(parents=True, exist_ok=True)
+                dest = unique_target_path(trash_dir / p.name)
+                shutil.move(str(p), str(dest))
+                logging.info(f"MOVED EMPTY DIR TO TRASH: {p} -> {dest}")
+            except Exception as e:
+                logging.error(f"Error moving dir {p} to trash {trash_dir}: {e}")
+
+
 def should_skip(path: Path, output_dirs: set) -> bool:
     """The function `should_skip` determines whether a given file path should be skipped based on whether it is inside specified output directories.
 
@@ -273,6 +362,16 @@ def main():
     parser.add_argument(
         "--pretest", action="store_true", help="Create pretest files in --path and exit"
     )
+    parser.add_argument(
+        "--remove-empty",
+        action="store_true",
+        help="Remove empty subdirectories after sorting (respect --dry-run)",
+    )
+    parser.add_argument(
+        "--trash",
+        action="store_true",
+        help="If provided, delete directories permanently. Otherwise move empty dirs to a .trashcan folder",
+    )
 
     args = parser.parse_args()
 
@@ -336,6 +435,14 @@ def main():
 
         # General case: move or copy
         move_or_copy(file_path, target, copy=args.copy, dry_run=args.dry_run)
+
+    # Optionally prune empty directories
+    if args.remove_empty:
+        # Decide trash behavior: if --trash then permanent deletion, else move to .trashcan
+        trash_permanent = bool(args.trash)
+        # Default trash dir is a hidden folder at src/.trashcan
+        trash_dir = src / ".trashcan"
+        prune_empty_dirs(src, output_dirs, dry_run=bool(args.dry_run), trash_permanent=trash_permanent, trash_dir=trash_dir)
 
 
 if __name__ == "__main__":
