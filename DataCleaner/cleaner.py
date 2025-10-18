@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from __future__ import annotations
 import argparse
 import csv
@@ -6,7 +8,6 @@ import sys
 from typing import Optional, Sequence
 import pandas as pd
 
-#!/usr/bin/env python3
 """
 DataCleaner - simple CSV/TSV/DELIM cleaner
 
@@ -25,7 +26,18 @@ $ python cleaner.py data.tsv --sep '\\t' --drop-const --missing constant --fill 
 
 DELIMITERS = [",", "\t", ";", "|"]
 
+
 def detect_delimiter(path: str, bytes_to_read: int = 4096) -> Optional[str]:
+    """Detect the delimiter in the CSV/TSV file.
+
+    Args:
+        path (str): Path to the document
+        bytes_to_read (int, optional): Number of bytes to read for delimiter detection. Defaults to 4096.
+
+    Returns:
+        out (str): The delimiter of the document
+    """
+
     with open(path, "r", encoding="utf-8", errors="ignore") as f:
         sample = f.read(bytes_to_read)
     try:
@@ -36,6 +48,16 @@ def detect_delimiter(path: str, bytes_to_read: int = 4096) -> Optional[str]:
 
 
 def read_table(path: str, sep: Optional[str] = None) -> pd.DataFrame:
+    """Read a CSV/TSV file into a DataFrame.
+
+    Args:
+        path (str): Path to the document
+        sep (Optional[str], optional): Delimiter to use. If None, auto-detects. Defaults to None.
+
+    Returns:
+        out (pd.DataFrame): Loaded DataFrame
+    """
+
     if sep is None:
         sep = detect_delimiter(path)
     if sep is None:
@@ -44,11 +66,32 @@ def read_table(path: str, sep: Optional[str] = None) -> pd.DataFrame:
     return pd.read_csv(path, sep=sep, engine="python")
 
 
-def remove_duplicates(df: pd.DataFrame, subset: Optional[Sequence[str]] = None) -> pd.DataFrame:
+def remove_duplicates(
+    df: pd.DataFrame, subset: Optional[Sequence[str]] = None
+) -> pd.DataFrame:
+    """Remove duplicate rows from the DataFrame.
+
+    Args:
+        df (pd.DataFrame): Input DataFrame
+        subset (Optional[Sequence[str]], optional): Columns to consider for duplicates. Defaults to None.
+
+    Returns:
+        out (pd.DataFrame): DataFrame with duplicates removed
+    """
+
     return df.drop_duplicates(subset=list(subset) if subset else None, keep="first")
 
 
 def drop_constant_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop columns with constant values from the DataFrame.
+
+    Args:
+        df (pd.DataFrame): Input DataFrame
+
+    Returns:
+        out (pd.DataFrame): DataFrame with constant columns dropped
+    """
+
     # consider columns constant if they have <= 1 unique non-NA value
     cols_to_drop = [c for c in df.columns if df[c].nunique(dropna=True) <= 1]
     return df.drop(columns=cols_to_drop)
@@ -60,13 +103,27 @@ def fill_missing(
     fill_value: Optional[str] = None,
     subset: Optional[Sequence[str]] = None,
 ) -> pd.DataFrame:
+    """Handle missing values in the DataFrame.
+
+    Args:
+        df (pd.DataFrame): Input DataFrame
+        strategy (str): Strategy to handle missing values: "drop", "mean", "median", "mode", "constant"
+        fill_value (Optional[str], optional): Value to use with "constant" strategy. Defaults to None.
+        subset (Optional[Sequence[str]], optional): Columns to apply the strategy to. Defaults to None.
+
+    Returns:
+        out (pd.DataFrame): DataFrame with missing values handled
+    """
+
     target_cols = list(subset) if subset else list(df.columns)
     if strategy == "drop":
         return df.dropna(subset=target_cols)
     if strategy == "constant":
         if fill_value is None:
             raise ValueError("fill_value must be provided for constant strategy")
-        return df.fillna(value={c: convert_fill_value(df[c].dtype, fill_value) for c in target_cols})
+        return df.fillna(
+            value={c: convert_fill_value(df[c].dtype, fill_value) for c in target_cols}
+        )
     if strategy in ("mean", "median"):
         agg = df[target_cols].select_dtypes(include=["number"])
         for c in agg.columns:
@@ -87,7 +144,16 @@ def fill_missing(
 
 
 def convert_fill_value(dtype, val: str):
-    # try to convert the string fill value to appropriate dtype (int/float/bool), else keep string
+    """Try to convert the string fill value to appropriate dtype (int/float/bool), else keep string
+
+    Args:
+        dtype (pd.Series.dtype): _dtype of the column
+        val (str): _fill value as string
+
+    Returns:
+        out: Converted fill value
+    """
+
     try:
         if pd.api.types.is_integer_dtype(dtype):
             return int(val)
@@ -106,6 +172,13 @@ def convert_fill_value(dtype, val: str):
 
 
 def write_table(df: pd.DataFrame, out_path: str) -> None:
+    """Write the DataFrame to a delimited file.
+
+    Args:
+        df (pd.DataFrame): DataFrame to write
+        out_path (str): Output file path
+    """
+
     # choose delimiter by extension, default to comma
     _, ext = os.path.splitext(out_path.lower())
     if ext in (".tsv", ".txt"):
@@ -115,13 +188,38 @@ def write_table(df: pd.DataFrame, out_path: str) -> None:
 
 
 def parse_args(argv=None):
-    p = argparse.ArgumentParser(description="DataCleaner - simple CSV/TSV cleaning utility")
+    """Parse command-line arguments.
+
+    Args:
+        argv (list, optional): List of command-line arguments. Defaults to None.
+
+    Returns:
+        out: Parsed arguments
+    """
+
+    p = argparse.ArgumentParser(
+        description="DataCleaner - simple CSV/TSV cleaning utility"
+    )
     p.add_argument("input", help="Input delimited file (csv/tsv/other)")
-    p.add_argument("--out", "-o", help="Output file path. Defaults to cleaned_<input>", default=None)
-    p.add_argument("--sep", help="Force input delimiter (e.g. ',', '\\t', ';', '|')", default=None)
+    p.add_argument(
+        "--out",
+        "-o",
+        help="Output file path. Defaults to cleaned_<input>",
+        default=None,
+    )
+    p.add_argument(
+        "--sep", help="Force input delimiter (e.g. ',', '\\t', ';', '|')", default=None
+    )
     p.add_argument("--dedup", action="store_true", help="Remove duplicate rows")
-    p.add_argument("--dedup-cols", nargs="+", help="Columns to consider for duplicates (optional)", default=None)
-    p.add_argument("--drop-const", action="store_true", help="Drop columns with constant values")
+    p.add_argument(
+        "--dedup-cols",
+        nargs="+",
+        help="Columns to consider for duplicates (optional)",
+        default=None,
+    )
+    p.add_argument(
+        "--drop-const", action="store_true", help="Drop columns with constant values"
+    )
     p.add_argument(
         "--missing",
         choices=["drop", "mean", "median", "mode", "constant"],
@@ -129,7 +227,12 @@ def parse_args(argv=None):
         help="How to handle missing values",
     )
     p.add_argument("--fill", help="Value to use with --missing constant", default=None)
-    p.add_argument("--missing-cols", nargs="+", help="Columns to apply missing handling to (optional)", default=None)
+    p.add_argument(
+        "--missing-cols",
+        nargs="+",
+        help="Columns to apply missing handling to (optional)",
+        default=None,
+    )
     return p.parse_args(argv)
 
 
@@ -155,7 +258,12 @@ def main(argv=None):
 
     if args.missing:
         try:
-            df = fill_missing(df, strategy=args.missing, fill_value=args.fill, subset=args.missing_cols)
+            df = fill_missing(
+                df,
+                strategy=args.missing,
+                fill_value=args.fill,
+                subset=args.missing_cols,
+            )
         except Exception as e:
             print(f"Missing-handling error: {e}", file=sys.stderr)
             sys.exit(4)
