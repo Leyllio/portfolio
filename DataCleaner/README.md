@@ -19,3 +19,46 @@ DataCleaner allows you to quickly process CSV files: remove duplicates, handle m
 1. Clone the Portfolio repository:
 ```bash
 git clone https://github.com/Mathéo-Petry/Portfolio.git
+```
+2. Navigate to the DataCleaner directory:
+```bash
+cd Portfolio/DataCleaner
+```
+
+## Usage
+
+```bash
+python3 cleaner.py input.csv --dedup --drop-const --missing mean --out cleaned.csv
+```
+
+or
+
+```bash
+python3 cleaner.py data.tsv --sep '\\t' --drop-const --missing constant --fill '0'
+```
+
+## Command-Line Arguments
+
+- `input.csv/tsv`  
+    Input CSV or TSV file to be cleaned.
+
+- `--sep SEP`  
+    Specify the separator (default: `,`). Example: `--sep '\t'`.
+
+- `--dedup`  
+    Remove duplicate rows.
+
+- `--dedup-cols COL1 COL2 ...`  
+        Columns to consider when detecting duplicates (optional).
+
+- `--drop-const`  
+    Drop columns that contain a single constant value.
+
+- `--missing STRATEGY`  
+    How to handle missing values. STRATEGY can be: `drop`, `mean`, `median`, `mode`, `constant`.
+
+- `--fill VALUE`  
+    Value to use with `--missing constant`.
+
+- `--missing-cols COL1 COL2 ...`  
+    Columns to apply the missing-value strategy to (optional).
