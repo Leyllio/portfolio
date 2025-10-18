@@ -24,6 +24,15 @@ git clone https://github.com/Mathéo-Petry/Portfolio.git
 ```bash
 cd Portfolio/DataCleaner
 ```
+3. (Optional) Create and activate a virtual environment:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+4. Install required packages:
+```bash
+pip install -r requirements.txt
+```
 
 ## Usage
 
